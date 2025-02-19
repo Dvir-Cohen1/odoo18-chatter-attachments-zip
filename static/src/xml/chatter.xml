@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Inherit the attachment box view in the chatter form view to add the
-button -->
 <templates xml:space="preserve">
     <t t-inherit="mail.Chatter" t-inherit-mode="extension" owl="1">
-        <xpath expr="//div[hasclass('o-mail-AttachmentBox')]"
-               position="inside">
-            <div class="d-flex flex-column">
-                <button
-                     t-on-click="(ev) => this.onDownloadAttachments(ev)"
-                    type="button"
-                    class="btn btn-link"
-            >
-             <i class="fa fa-download"/>
-             קובץ zip
-
-            </button>
-            </div>
+        <xpath expr="//div[hasclass('o-mail-Followers')]"
+               position="after">
+                <div class="d-flex flex-column" t-if="this and this.attachments and this.attachments.length > 1">
+                    <button
+                        t-on-click="(ev) => this.onDownloadAttachments(ev)"
+                        type="button"
+                        class="btn btn-link text-action"
+                        title="Download All Attachments .zip"
+                        style="margin:8px 0px;"
+                >
+                    <i class="fa fa-download"/>
+                </button>
+                </div>
         </xpath>
     </t>
 </templates>

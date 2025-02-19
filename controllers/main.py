@@ -4,55 +4,51 @@ import zipfile
 import logging
 from odoo import http
 from odoo.http import request
-import urllib.parse
-
+import json
 
 _logger = logging.getLogger(__name__)
 
 class AttachmentController(http.Controller):
-    @http.route('/download/attachments/zip/<int:task_id>', website=True, page=True,
-                auth='public', csrf=False)
-    def download_attachments_zip(self, task_id, **kwargs):
-        task = request.env['project.task'].browse(task_id)
+    @http.route('/download/attachments/zip/<string:thread_model>/<int:thread_id>', website=True, page=True, auth='public', csrf=False)
+    def download_attachments_zip(self, thread_model, thread_id, **kwargs):
+        record = request.env[thread_model].browse(thread_id)
 
-        if not task.exists():
-            _logger.warning(f"Task ID {task_id} does not exist.")
-            return {'error': 'Task not found.'}
+        if not record.exists():
+            _logger.warning(f"Record ID {thread_id} does not exist in model {thread_model}.")
+            return request.make_response(json.dumps({'error': 'Record not found.'}), 
+                                         headers=[('Content-Type', 'application/json')])
 
-        attachments = task.attachment_ids
+        # Use ir.attachment to get attachments related to the record
+        attachments = request.env["ir.attachment"].search([
+            ("res_model", "=", thread_model),
+            ("res_id", "=", thread_id),
+        ])
+
         if not attachments:
-            _logger.warning(f"No attachments found for task ID {task_id}.")
-            # Return a JSON response to indicate the error
-            return request.make_response('{"error": "No attachments found for this task."}', 
-                headers=[('Content-Type', 'application/json')])
+            _logger.warning(f"No attachments found for record ID {thread_id}.")
+            return request.make_response(json.dumps({'error': 'No attachments found for this record.'}), 
+                                         headers=[('Content-Type', 'application/json')])
 
         try:
-            # Generate the filename based on task name and partner name
-            task_name = task.name.replace(' ', '_') if task.name else f'task_{task_id}'
-            partner_name = getattr(task.partner_id, 'name', '').replace(' ', '_') if task.partner_id else ''
-            zip_filename = f"{task_name}_{partner_name}"
+            record_name = record.name.replace(' ', '_') if hasattr(record, 'name') and record.name else f"{thread_model}_{thread_id}"
+            zip_filename = f"{record_name}.zip"
 
-            # Encode the filename in UTF-8 and then URL-encode it
-            zip_filename_utf8 = zip_filename.encode('utf-8')
-            zip_filename_encoded = urllib.parse.quote(zip_filename_utf8)
-            
             zip_data = io.BytesIO()
             with zipfile.ZipFile(zip_data, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for attachment in attachments:
-                    attachment_data = base64.b64decode(attachment.datas)
-                    zipf.writestr(attachment.name, attachment_data)
+                    if attachment.datas:
+                        attachment_data = base64.b64decode(attachment.datas)
+                        zipf.writestr(attachment.name, attachment_data)
 
-            response = request.make_response(
-                zip_data.getvalue(),
-                headers=[
-                    ('Content-Type', 'application/zip'),
-                    ('Content-Disposition', f'attachment; filename*=UTF-8\'\'{zip_filename_encoded}'),
-                ]
+            zip_data.seek(0)
+            zip_base64 = base64.b64encode(zip_data.getvalue()).decode('utf-8')
+
+            return request.make_response(
+                json.dumps({"filename": zip_filename, "file": zip_base64}),
+                headers=[('Content-Type', 'application/json')]
             )
-            zip_data.close()
-            return response
 
         except Exception as e:
-            _logger.error(f"Error generating ZIP for task ID {task_id}: {str(e)}")
-            return request.make_response('{"error": "An error occurred while generating the ZIP file."}', 
-                headers=[('Content-Type', 'application/json')])
+            _logger.error(f"Error generating ZIP for record ID {thread_id}: {str(e)}")
+            return request.make_response(json.dumps({'error': 'An error occurred while generating the ZIP file.'}), 
+                                         headers=[('Content-Type', 'application/json')])
